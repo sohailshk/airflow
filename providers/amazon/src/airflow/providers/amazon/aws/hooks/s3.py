@@ -769,12 +769,11 @@ class S3Hook(AwsBaseHook):
             when this happens. If false an error will be raised.
         :param last_activity_time: last activity datetime.
         """
-        if not previous_objects:
-            previous_objects = set()
+        previous_objects = set(previous_objects) if previous_objects else set()
         list_keys = await self._list_keys_async(client=client, bucket_name=bucket_name, prefix=prefix)
         current_objects = set(list_keys)
         current_num_objects = len(current_objects)
-        if current_num_objects > len(previous_objects):
+        if current_objects > previous_objects:
             # When new objects arrived, reset the inactivity_seconds
             # and update previous_objects for the next poke.
             self.log.info(
@@ -792,7 +791,7 @@ class S3Hook(AwsBaseHook):
                 "inactivity_seconds": inactivity_seconds,
             }
 
-        if len(previous_objects) - len(current_objects):
+        if previous_objects - current_objects:
             # During the last poke interval objects were deleted.
             if allow_delete:
                 deleted_objects = previous_objects - current_objects
@@ -812,7 +811,10 @@ class S3Hook(AwsBaseHook):
 
             return {
                 "status": "error",
-                "message": f"{os.path.join(bucket_name, prefix)} between pokes.",
+                "message": (
+                    f"Illegal behavior: objects were deleted in {os.path.join(bucket_name, prefix)} "
+                    "between pokes."
+                ),
             }
 
         if last_activity_time:

@@ -1179,7 +1179,40 @@ class TestAwsS3Hook:
             last_activity_time=None,
         )
 
-        assert response == {"message": "test_bucket/test between pokes.", "status": "error"}
+        assert response == {
+            "message": "Illegal behavior: objects were deleted in test_bucket/test between pokes.",
+            "status": "error",
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("allow_delete", "expected_status"),
+        [(False, "error"), (True, "pending")],
+    )
+    @async_mock.patch("airflow.providers.amazon.aws.triggers.s3.S3Hook._list_keys_async")
+    async def test_s3_key_hook_is_keys_unchanged_replaced_object_async(
+        self, mock_list_keys, allow_delete, expected_status
+    ):
+        """An object replaced by another one between pokes counts as a deletion, as in the sync sensor."""
+        mock_list_keys.return_value = ["b", "c"]
+        s3_hook_async = S3Hook(client_type="S3", resource_type="S3")
+
+        response = await s3_hook_async.is_keys_unchanged_async(
+            client=AsyncMock(),
+            bucket_name="test_bucket",
+            prefix="test",
+            inactivity_period=1,
+            min_objects=1,
+            previous_objects={"a", "b"},
+            inactivity_seconds=0,
+            allow_delete=allow_delete,
+            last_activity_time=None,
+        )
+
+        assert response["status"] == expected_status
+        if allow_delete:
+            assert response["previous_objects"] == {"b", "c"}
+            assert response["inactivity_seconds"] == 0
 
     @pytest.mark.asyncio
     @mock.patch.object(S3Hook, "_list_keys_async", autospec=True)
